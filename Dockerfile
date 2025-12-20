@@ -34,7 +34,7 @@ RUN \
 
 FROM mirror.gcr.io/golang:1.22-alpine AS build
 
-WORKDIR /src
+WORKDIR /tmp
 COPY go.mod ./
 RUN go mod download
 
