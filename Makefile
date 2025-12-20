@@ -3,6 +3,9 @@ VERSION    ?= "1.0.2"
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE       ?= "2025-08-27"
 
+IMAGE      ?= bodsch/server
+NOCACHE    := --no-cache
+
 # ---- config ----
 BIN        := server
 CMD        := ./cmd/server
@@ -72,6 +75,14 @@ clean:
 .PHONY: print-version
 print-version:
 	@echo "version=$(VERSION) commit=$(COMMIT) date=$(DATE)"
+
+.PHONY: container
+container:
+	docker buildx build ${NOCACHE} --platform linux/amd64 --tag ${IMAGE}:${VERSION} .
+
+.PHONY: run-container
+run-container:
+	docker run -ti --rm -e DEBUG_ENTRYPOINT="true" ${IMAGE}:${VERSION} /bin/wait4x
 
 # ---- release ----
 .PHONY: release
