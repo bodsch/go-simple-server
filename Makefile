@@ -1,7 +1,7 @@
 ## --- Versionierung (ENV hat Vorrang, sonst Fallbacks) ---
-VERSION    ?= "1.0.2"
+VERSION    ?= "0.1.0"
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-DATE       ?= "2025-08-27"
+DATE       ?= "2025-12-20"
 
 IMAGE      ?= bodsch/server
 NOCACHE    := --no-cache
@@ -9,7 +9,6 @@ NOCACHE    := --no-cache
 # ---- config ----
 BIN        := server
 CMD        := ./cmd/server
-CONFIG     ?= example.config.yaml
 GO         ?= go
 GOFLAGS    ?= -trimpath -buildvcs=true
 LDFLAGS := -s -w \
@@ -66,7 +65,7 @@ build:
 
 .PHONY: run
 run: build
-	./bin/$(BIN) -config $(CONFIG)
+	./bin/$(BIN)
 
 .PHONY: clean
 clean:
