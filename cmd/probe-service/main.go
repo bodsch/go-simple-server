@@ -60,17 +60,37 @@ func main() {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"status":         "unhealthy",
 				"service":        c.ServiceName,
-				"version":        c.Version,
-				"time":           time.Now().UTC().Format(time.RFC3339Nano),
 				"retry_after_ms": health.Remaining().Milliseconds(),
+				"time":           time.Now().UTC().Format(time.RFC3339),
 			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
 			"service": c.ServiceName,
-			"version": c.Version,
-			"time":    time.Now().UTC().Format(time.RFC3339Nano),
+			"time":    time.Now().UTC().Format(time.RFC3339),
+		})
+	})
+
+	// health: 200 only if "healthy" flag is true
+	mux.HandleFunc("/actuator/health/liveness", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !health.Load() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status":         "unhealthy",
+				"service":        c.ServiceName,
+				"retry_after_ms": health.Remaining().Milliseconds(),
+				"time":           time.Now().UTC().Format(time.RFC3339),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "ok",
+			"service": c.ServiceName,
+			"time":    time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 
@@ -84,17 +104,37 @@ func main() {
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"status":         "not-ready",
 				"service":        c.ServiceName,
-				"version":        c.Version,
-				"time":           time.Now().UTC().Format(time.RFC3339Nano),
 				"retry_after_ms": ready.Remaining().Milliseconds(),
+				"time":           time.Now().UTC().Format(time.RFC3339),
 			})
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"status":  "ready",
 			"service": c.ServiceName,
-			"version": c.Version,
-			"time":    time.Now().UTC().Format(time.RFC3339Nano),
+			"time":    time.Now().UTC().Format(time.RFC3339),
+		})
+	})
+
+	// ready: 200 only if "ready" flag is true
+	mux.HandleFunc("/actuator/health/readiness", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
+			return
+		}
+		if !ready.Load() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"status":         "not-ready",
+				"service":        c.ServiceName,
+				"retry_after_ms": ready.Remaining().Milliseconds(),
+				"time":           time.Now().UTC().Format(time.RFC3339),
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":  "ready",
+			"service": c.ServiceName,
+			"time":    time.Now().UTC().Format(time.RFC3339),
 		})
 	})
 
@@ -111,7 +151,7 @@ func main() {
 			"health":       false,
 			"ready":        false,
 			"delay":        c.StartupDelay.String(),
-			"time":         time.Now().UTC().Format(time.RFC3339Nano),
+			"time":         time.Now().UTC().Format(time.RFC3339),
 			"health_in_ms": health.Remaining().Milliseconds(),
 			"ready_in_ms":  ready.Remaining().Milliseconds(),
 		})
@@ -127,7 +167,7 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"health":       false,
 			"delay":        c.StartupDelay.String(),
-			"time":         time.Now().UTC().Format(time.RFC3339Nano),
+			"time":         time.Now().UTC().Format(time.RFC3339),
 			"health_in_ms": health.Remaining().Milliseconds(),
 		})
 	})
@@ -142,7 +182,7 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ready":       false,
 			"delay":       c.StartupDelay.String(),
-			"time":        time.Now().UTC().Format(time.RFC3339Nano),
+			"time":        time.Now().UTC().Format(time.RFC3339),
 			"ready_in_ms": ready.Remaining().Milliseconds(),
 		})
 	})
@@ -346,21 +386,19 @@ func maxBody(max int64) middleware {
 func accessLog(log *slog.Logger) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
+			// start := time.Now()
 			sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 
 			next.ServeHTTP(sw, r)
 
-			log.Info("http_request",
+			log.Info("probe",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", sw.status,
-				"bytes", sw.bytes,
-				"duration_ms", time.Since(start).Milliseconds(),
-				"ua", r.UserAgent(),
+				// "bytes", sw.bytes,
+				"user-agent", r.UserAgent(),
 				"remote", r.RemoteAddr,
-				"xff", r.Header.Get("X-Forwarded-For"),
-				"request_id", requestIDFromContext(r.Context()),
+				// "x-forwarded-for", r.Header.Get("X-Forwarded-For"),
 			)
 		})
 	}
@@ -402,7 +440,7 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, code string) {
 	writeJSON(w, status, map[string]any{
 		"error": code,
-		"time":  time.Now().UTC().Format(time.RFC3339Nano),
+		"time":  time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -439,8 +477,8 @@ func loadCfg() cfg {
 	port := mustEnvInt("PORT", 8080)
 	startupDelay := mustEnvDuration("STARTUP_DELAY", 30*time.Second)
 
-	serviceName := envStr("SERVICE_NAME", "simple-api")
-	version := envStr("VERSION", "0.1.0")
+	serviceName := envStr("SERVICE_NAME", "probe-service")
+	version := envStr("VERSION", "1.0.0")
 
 	shutdownWait := mustEnvDuration("SHUTDOWN_WAIT", 10*time.Second)
 
@@ -468,8 +506,21 @@ func loadCfg() cfg {
 }
 
 // newLogger constructs a JSON slog logger writing to stdout with the configured level.
+
 func newLogger(c cfg) *slog.Logger {
-	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: c.LogLevel})
+	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: c.LogLevel,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// JSONHandler emits time in RFC3339Nano by default.
+			// Replace it with RFC3339 (no fractional seconds).
+			if a.Key == slog.TimeKey {
+				// a.Value.Time().Format(time.RFC3339)
+				t := a.Value.Time().UTC()
+				a.Value = slog.StringValue(t.Format(time.RFC3339))
+			}
+			return a
+		},
+	})
 	return slog.New(h)
 }
 

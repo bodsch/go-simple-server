@@ -1,14 +1,14 @@
 ## --- Versionierung (ENV hat Vorrang, sonst Fallbacks) ---
-VERSION    ?= "0.1.0"
+VERSION    ?= "1.0.0"
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE       ?= "2025-12-20"
 
-IMAGE      ?= bodsch/server
-NOCACHE    := --no-cache
+IMAGE      ?= bodsch/probe-service
+NOCACHE    := "--cache"
 
 # ---- config ----
-BIN        := server
-CMD        := ./cmd/server
+BIN        := probe-service
+CMD        := ./cmd/probe-service
 GO         ?= go
 GOFLAGS    ?= -trimpath -buildvcs=true
 LDFLAGS := -s -w \
@@ -77,11 +77,11 @@ print-version:
 
 .PHONY: container
 container:
-	docker buildx build ${NOCACHE} --platform linux/amd64 --tag ${IMAGE}:${VERSION} .
+	docker buildx build --platform linux/amd64 --tag ${IMAGE}:${VERSION} .
 
 .PHONY: run-container
 run-container:
-	docker run -ti --rm -e DEBUG_ENTRYPOINT="true" ${IMAGE}:${VERSION} /bin/wait4x
+	docker run -ti --rm -e DEBUG_ENTRYPOINT="false" -e SERVICE_NAME="caefeeder" ${IMAGE}:${VERSION}
 
 # ---- release ----
 .PHONY: release

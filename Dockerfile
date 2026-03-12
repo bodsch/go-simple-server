@@ -5,15 +5,19 @@ FROM mirror.gcr.io/alpine:3 AS downloader
 ARG VERSION_WAIT4X=3.6.0
 
 RUN \
-  apk add \
-    curl
+  echo 'hosts: files dns' >> /etc/nsswitch.conf && \
+  apk update  --quiet --no-cache && \
+  apk upgrade --quiet --no-cache && \
+  apk add     --quiet --no-cache \
+    curl \
+    ca-certificates
 
 WORKDIR /tmp
 
 # install wait4x
 RUN \
   curl \
-    --silent \
+    --verbose \
     --location \
     --output wait4x-linux-amd64.tar.gz \
     "https://github.com/wait4x/wait4x/releases/download/v${VERSION_WAIT4X}/wait4x-linux-amd64.tar.gz"
@@ -32,34 +36,38 @@ RUN \
 
 # -------------------------------
 
-FROM mirror.gcr.io/golang:1.22-alpine AS build
+FROM mirror.gcr.io/golang:1.23-alpine AS build
 
-WORKDIR /tmp
+WORKDIR /src
+
 COPY go.mod ./
 RUN go mod download
 
-COPY cmd/ ./cmd/
+# now copy the rest
+COPY . .
 
 RUN \
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64; \
-  go build -trimpath -ldflags="-s -w" -o /out/simple-api ./cmd/server
+  go build -trimpath -ldflags="-s -w" -o /out/probe-service ./cmd/probe-service
 
 # -------------------------------
 
 FROM mirror.gcr.io/alpine:3
 
 RUN \
-  apk add \
-    bash
+  echo 'hosts: files dns' >> /etc/nsswitch.conf && \
+  apk update  --quiet --no-cache && \
+  apk upgrade --quiet --no-cache && \
+  apk add     --quiet --no-cache \
+    bash \
+    ca-certificates
 
 ENV PORT=8080
 EXPOSE 8080
 COPY rootfs /
-COPY --from=build /out/simple-api /usr/bin/simple-api
+COPY --from=build /out/probe-service /usr/bin/probe-service
 COPY --from=downloader /tmp/wait4x /usr/bin/wait4x
-
 # USER nonroot:nonroot
-
-CMD ["/bin/wait4x"]
-
 ENTRYPOINT ["/bin/entrypoint.sh"]
+# CMD ["/bin/wait4x"]
+

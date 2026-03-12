@@ -40,6 +40,7 @@ All configuration is done via environment variables.
 | `WRITE_TIMEOUT`  | `15s`             | duration | HTTP server write timeout. |
 | `IDLE_TIMEOUT`   | `60s`             | duration | HTTP server idle timeout. |
 | `MAX_BODY_BYTES` | `1048576` (1 MiB) | int64    | Maximum request body size enforced via `http.MaxBytesReader`. |
+| `SERVICE_NAME`   | `probe-service`   | string | Included in JSON responses and logs. |
 | `LOG_LEVEL`      | `info`            | string   | Log level: `debug`, `info`, `warn`, `error`. Logs are JSON (via `log/slog`). |
 
 ### Duration format
