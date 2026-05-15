@@ -1,0 +1,145 @@
+# GoReleaser configuration for the Forgejo release pipeline.
+#
+# Mirrors `.goreleaser.yaml` but targets:
+#   - Forgejo's Gitea-compatible release API (release.gitea + gitea_urls)
+#   - Forgejo's built-in container registry (host == Forgejo instance URL)
+#
+# Required environment variables (set by the workflow):
+#   GITEA_TOKEN       — Forgejo token with packages:write + repository:write
+#   GITEA_API_URL     — e.g. "https://forgejo.example.com/api/v1"
+#   GITEA_DOWNLOAD_URL — e.g. "https://forgejo.example.com"
+#   DOCKER_REGISTRY   — Forgejo host, e.g. "forgejo.example.com"
+#   DOCKER_REPO       — lowercase "<owner>/probe-service"
+
+version: 2
+
+project_name: probe-service
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: probe-service
+    main: ./cmd/probe-service
+    binary: probe-service
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - id: probe-service
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    formats: [tar.gz]
+    files:
+      - LICENSE*
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+dockers:
+  - id: amd64
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+    extra_files:
+      - rootfs
+
+  - id: arm64
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--build-arg=VERSION={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .GitURL }}"
+      - "--label=org.opencontainers.image.licenses=Apache-2.0"
+    extra_files:
+      - rootfs
+
+docker_manifests:
+  - name_template: "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}"
+    image_templates:
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-amd64"
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-arm64"
+  - name_template: "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:v{{ .Major }}.{{ .Minor }}"
+    image_templates:
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-amd64"
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-arm64"
+  - name_template: "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:latest"
+    image_templates:
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-amd64"
+      - "{{ .Env.DOCKER_REGISTRY }}/{{ .Env.DOCKER_REPO }}:{{ .Version }}-arm64"
+
+# Forgejo's release API is Gitea-compatible. GoReleaser switches to the
+# Gitea client because GITEA_TOKEN is set in the workflow environment.
+gitea_urls:
+  api: "{{ .Env.GITEA_API_URL }}"
+  download: "{{ .Env.GITEA_DOWNLOAD_URL }}"
+  skip_tls_verify: false
+
+release:
+  draft: false
+  prerelease: false
+  mode: replace
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Others
+      order: 999

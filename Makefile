@@ -1,7 +1,7 @@
 ## --- Versionierung (ENV hat Vorrang, sonst Fallbacks) ---
-VERSION    ?= "1.0.0"
+VERSION    ?= "2.0.0"
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-DATE       ?= "2025-12-20"
+DATE       ?= "2026-05-15"
 
 IMAGE      ?= bodsch/probe-service
 NOCACHE    := "--cache"
