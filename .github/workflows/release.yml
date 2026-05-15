@@ -60,7 +60,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GH_TOKEN }}
 
       # GHCR requires lowercase image paths; org/repo on GitHub may be mixed case.
       - name: Compute lowercase repository
@@ -76,7 +76,7 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           DOCKER_REGISTRY: ghcr.io
           DOCKER_REPO: ${{ steps.repo.outputs.lower }}
           # When triggered manually, tell GoReleaser which tag to use.
