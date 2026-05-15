@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -e
+echo "[DOCKER ENTRYPOINT] - entering $0"
+
+if [ "${DEBUG_ENTRYPOINT}" = "true" ]; then
+  echo "[DOCKER ENTRYPOINT] - DEBUG_ENTRYPOINT detected, all commands will be printed"
+  set -x
+fi
+
+_COMMON_WAIT_ARGS="--no-color"
+_COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --interval ${WAIT_INTERVAL:-2s}"
+_COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --backoff-policy ${WAIT_BACKOFF_POLICY:-exponential}"
+_COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --timeout ${WAIT_TIMEOUT:-180}s"
+if [ "${WAIT_BACKOFF_POLICY:-exponential}" = "exponential" ]; then
+  _COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --backoff-exponential-coefficient ${WAIT_COEFFICIENT:-1.2}"
+  _COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --backoff-exponential-max-interval ${WAIT_MAX_INTERVAL:-20s}"
+fi
+if [ ! "${WAIT_VERBOSE:-false}" = "true" ]; then
+  _COMMON_WAIT_ARGS="${_COMMON_WAIT_ARGS} --quiet"
+else
+  echo "[DOCKER ENTRYPOINT] - executing wait4x using the following args: ${_COMMON_WAIT_ARGS}"
+fi
+
+for env_key in $(compgen -A variable | grep WAIT_PATH_); do
+  WAIT_PATHS=${WAIT_PATHS}${WAIT_PATHS+,}${!env_key}
+done
+
+if [ -n "${WAIT_PATHS}" ]; then
+  echo "[DOCKER ENTRYPOINT] - waiting for file existence at paths: ${WAIT_PATHS} ..."
+  for _WAIT_PATH in ${WAIT_PATHS//,/ }; do
+    /usr/bin/wait4x exec ${_COMMON_WAIT_ARGS} \
+        --exit-code 2 \
+        "ls ${_WAIT_PATH}"
+  done
+fi
+
+# envs may be set at different part of the deployment, aggregate all WAIT_HOST_* env vars as well
+for env_key in $(compgen -A variable | grep WAIT_HOST_); do
+  WAIT_HOSTS=${WAIT_HOSTS}${WAIT_HOSTS+,}${!env_key}
+done
+
+if [ -n "${WAIT_HOSTS}" ]; then
+  echo "[DOCKER ENTRYPOINT] - waiting for tcp ports to listen at ${WAIT_HOSTS} ..."
+  /usr/bin/wait4x tcp ${_COMMON_WAIT_ARGS} ${WAIT_HOSTS//,/ }
+fi
+
+# envs may be set at different part of the deployment, aggregate all WAIT_HEALTH_ACTUATOR_* env vars as well
+for env_key in $(compgen -A variable | grep WAIT_HEALTH_ACTUATOR_); do
+  WAIT_HEALTH_ACTUATORS=${WAIT_HEALTH_ACTUATORS}${WAIT_HEALTH_ACTUATORS+,}${!env_key}
+done
+
+if [ -n "${WAIT_HEALTH_ACTUATORS}" ]; then
+  echo "[DOCKER ENTRYPOINT] - waiting for http health actuators UP status response at ${WAIT_HEALTH_ACTUATORS} ..."
+  _HEALTH_ACTUATOR_URLS=""
+  for _HEALTH_ACTUATOR_HOST in ${WAIT_HEALTH_ACTUATORS//,/ }; do
+     _HEALTH_ACTUATOR_PORT=8081
+     if [[ "${_HEALTH_ACTUATOR_HOST#*:}" != "${_HEALTH_ACTUATOR_HOST}" ]]; then
+       _HEALTH_ACTUATOR_PORT=${_HEALTH_ACTUATOR_HOST#*:}
+       _HEALTH_ACTUATOR_HOST=${_HEALTH_ACTUATOR_HOST%:*}
+     fi
+    _HEALTH_ACTUATOR_URLS="http://${_HEALTH_ACTUATOR_HOST}:${_HEALTH_ACTUATOR_PORT}/actuator/health ${_HEALTH_ACTUATOR_URLS}"
+  done
+  /usr/bin/wait4x http ${_COMMON_WAIT_ARGS} \
+    --expect-status-code 200 \
+    --expect-body-regex '"status":"UP"' \
+    ${_HEALTH_ACTUATOR_URLS}
+fi
+
+if [ -n "${WAIT_AFTER}" ]; then
+  echo "[DOCKER ENTRYPOINT] - waiting for ${WAIT_AFTER} seconds, before continuing in the chain..."
+  sleep ${WAIT_AFTER}
+fi
+
+test $# -gt 0 && exec "./$@" || echo "[DOCKER ENTRYPOINT] - entrypoint chain finished"
