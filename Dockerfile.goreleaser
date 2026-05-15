@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.7
+#
+# Dockerfile used by GoReleaser. Unlike the canonical Dockerfile (which
+# compiles the Go binary itself), this variant assumes the binary has
+# already been produced by `goreleaser build` and is sitting in the build
+# context next to this file. That makes the release pipeline 3-5x faster
+# because:
+#   - Go toolchain is not pulled into the image build
+#   - The Go cache is reused across architectures
+#   - GoReleaser handles cross-compilation cheaper than QEMU-driven docker
+#
+# The wait4x sidecar binary IS downloaded per-architecture during the
+# image build, because it is not a Go artifact and must match the target
+# platform. To avoid Docker doing the curl under emulated QEMU we resolve
+# TARGETARCH before downloading.
+
+ARG VERSION_WAIT4X=3.6.0
+
+# -----------------------------------------------------------------------------
+# Stage 1: download wait4x for the target architecture.
+# -----------------------------------------------------------------------------
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/alpine:3 AS wait4x
+
+ARG TARGETARCH
+ARG VERSION_WAIT4X
+
+RUN apk add --quiet --no-cache curl ca-certificates
+
+WORKDIR /tmp
+
+RUN set -eu; \
+    case "${TARGETARCH}" in \
+      amd64|arm64) ARCH="${TARGETARCH}" ;; \
+      *) echo "unsupported arch: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    FILE="wait4x-linux-${ARCH}.tar.gz"; \
+    BASE="https://github.com/wait4x/wait4x/releases/download/v${VERSION_WAIT4X}"; \
+    curl --fail --silent --show-error --location --output "${FILE}"           "${BASE}/${FILE}"; \
+    curl --fail --silent --show-error --location --output "${FILE}.sha256sum" "${BASE}/${FILE}.sha256sum"; \
+    sha256sum -c "${FILE}.sha256sum"; \
+    tar -xzf "${FILE}"; \
+    mv wait4x /out-wait4x; \
+    chmod 0755 /out-wait4x
+
+# -----------------------------------------------------------------------------
+# Stage 2: runtime image.
+# -----------------------------------------------------------------------------
+FROM mirror.gcr.io/alpine:3
+
+ARG VERSION="dev"
+
+# Set VERSION as a runtime env var so the probe-service reports the actual
+# release tag in its JSON responses and X-Service-Version header.
+ENV VERSION=${VERSION} \
+    PORT=8080
+
+RUN echo 'hosts: files dns' >> /etc/nsswitch.conf \
+ && apk add --quiet --no-cache bash ca-certificates tini \
+ && addgroup -S app \
+ && adduser -S -G app -u 10001 -h /home/app app
+
+EXPOSE 8080
+
+# GoReleaser places the linux/<arch> binary as `probe-service` in the
+# build context root. `rootfs` is provided via extra_files in .goreleaser.yaml.
+COPY rootfs              /
+COPY probe-service       /usr/bin/probe-service
+COPY --from=wait4x       /out-wait4x /usr/bin/wait4x
+
+RUN chmod 0755 /usr/bin/probe-service /usr/bin/wait4x /bin/entrypoint.sh
+
+USER 10001:10001
+
+ENTRYPOINT ["/sbin/tini", "--", "/bin/entrypoint.sh"]

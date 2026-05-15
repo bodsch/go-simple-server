@@ -1,3 +1,3 @@
-module example.com/server
+module bodsch.me/probe-service
 
-go 1.23.0
+go 1.25.10
